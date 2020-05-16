@@ -36,6 +36,15 @@ import random
 
 
 
+#Write a helper function to help initialize the parameters for a 3 layer convNet
+def init_threeLayer(k1,ch1,k2,ch2,k3,ch3):
+    #Structure of our convNet:
+    #input image = [NxCxHxW]
+    #first conv: [NxCxHxW] * [ch1xCxk1xk1] + [ch1]
+    #second conv: [Nxch1xHxW] * [ch2xch1xk1xk1] + [ch2]
+    #third conv: [Nxch2xHxW] * [ch3xch2xk1xk1] + [ch3]
+    
+
 
 
 #Define a convNEt of desired architecture
@@ -155,8 +164,17 @@ def train_part2(model_fn, params, learning_rate, trainNum):
 #        y = y.to(device=device, dtype=torch.long)
 
         # Forward pass: compute scores and loss
-        scores = model_fn(x, params)
-        loss = F.cross_entropy(scores, y)
+        #We want to recompute minibatch
+        sk_bw_Data.getMiniBatch(miniBatchSize)
+        
+        #Model attempts to create a bw image, input sketch mini batch
+        bwRender = model_fn(sk_bw_Data.srcMbatch, params)
+        
+#        loss = F.cross_entropy(scores, y)
+        #compute L1 difference between output of the model and the sink images
+        loss = l1Criteria(bwRender, sk_bw_Data.sinkMbatch)
+        
+        
 
         # Backward pass: PyTorch figures out which Tensors in the computational
         # graph has requires_grad=True and uses backpropagation to compute the
@@ -175,13 +193,25 @@ def train_part2(model_fn, params, learning_rate, trainNum):
                 w.grad.zero_()
 
         if t % print_every == 0:
-            print('Iteration %d, loss = %.4f' % (t, loss.item()))
-            check_accuracy_part2(loader_val, model_fn, params)
+            print('Iteration %d, loss = %.4f' % (i, loss.item()))
+            myAccCheck(bwRender,sk_bw_Data)
+#            check_accuracy_part2(sk_bw_Data.sinkMbatch, model_fn, params)
             print()
             
+ #MY accuracy checker, compares the rendered image with the BW version
+ #Use predefined data loader class
+def myAccCheck(genIm, inputData):
+    goalIm = inputData.sinkMbatch
+    imSource = inputData.srcMbatch
+    num = float(torch.sum(abs(goalIm - genIm)))
+    den = float(torch.sum(abs(goalIm - imSource)))
+    
+    metric = 1 - num/den
+    print("Accuracy by metric = " + str(metric))
+    return metric
+    
             
-            
-#Accuracy checking helper function
+#Accuracy checking helper function, wont use this one
 def check_accuracy_part2(loader, model_fn, params):
     """
     Check the accuracy of a classification model.
@@ -249,8 +279,8 @@ class myDataLoader:
         tempSink = cv2.imread(sinkPaths[i]).transpose((2,0,1))
         
         #Transform to torch tensor
-        self.srcMbatch[i] = torch.from_numpy(tempSrc)
-        self.sinkMbatch[i] = torch.from_numpy(tempSink)
+        self.srcMbatch[i] = torch.from_numpy(tempSrc).double()
+        self.sinkMbatch[i] = torch.from_numpy(tempSink).double()
         
         
     
@@ -272,11 +302,14 @@ file_sk = 'training_images/Sketch/'
 file_bw = 'training_images/Grayscale/'
 fext = '.jpg'
 
-thisData = myDataLoader(file_sk, file_bw)
-thatData = myDataLoader(file_bw, file_og)
+sk_bw_Data = myDataLoader(file_sk, file_bw)
+miniBatchSize = 64
 
-thisData.getMiniBatch(64)
-print(thisData.srcMbatch)
+l1Criteria = nn.L1Loss()
+
+sk_bw_Data.getMiniBatch(miniBatchSize)
+
+print(sk_bw_Data.srcMbatch)
 
 ##TODO
 #finish up the helper functions to be compatible with our workflow
